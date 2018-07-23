@@ -1,22 +1,18 @@
 var http        = require('http');
 var request     = require('request');
-var mysql 	= require('mysql');
-var WebSocketServer = new require('ws');
-
-// подключенные клиенты
-var clients = {};
+var mysql 	    = require('mysql');
+var websocket   = require('ws');
 
 // WebSocket-сервер на порту 8081
-var webSocketServer = new WebSocketServer.Server({
+var webSocketServer = new websocket.Server({
     host: '192.168.25.57',
     port: 5482
 });
 
 webSocketServer.on('connection', function(ws) {
 
-    var id = Math.random();
-    clients[id] = ws;
-    console.log("новое соединение " + id);
+    console.log("Новое соединение");
+
 
     ws.on('message', function(message) {
         console.log('получено сообщение ' + message);
@@ -24,64 +20,116 @@ webSocketServer.on('connection', function(ws) {
 
         switch (msg.cmd) {
             case 'auth':
-                var login = msg.login;
-                var pass = msg.pass;
-                var token = authorize(login, pass);
+                let token = authorize(ws, msg.login, msg.pass);
                 if (token != null) {
-                        var res = 'ok';
+                    var res = 'ok';
 
                 } else { var res = 'fail';
-                         token = false }
+                    token = false }
                 var answ = {res: res, cmd: msg.cmd, token: token};
-                ws.send(JSON.stringify(answ));
+                send_message(ws, answ);
+                break;
+            case 'msg':
+                // проверить токен
+                // принять сообщение в список
+                // толкнуть всем сокетам новое сообщение
+                if (check_token(msg.token)) {
+
+                }
                 break;
             default:
                 var answ = {res: 'unknown', cmd: msg.cmd};
-                ws.send(JSON.stringify(answ));
+                send_message(ws, answ);
         }
 
 
-        for (var key in clients) {
-            clients[key].send(message);
-            console.log(key+message);
-        }
     });
 
     ws.on('close', function() {
-        console.log('соединение закрыто ' + id);
-        delete clients[id];
+        console.log('Вебсокет закрыт');
+        // от БД не отключаемся
+        // dbc.end;
     });
 
 });
 
-async function query(text) {
+// глобальная будет
+var dbc = mysql.createConnection({
+    host     : 'localhost',
+    user     : 'chat_db_user',
+    password : '9U7gVtKAybFu7y3z',
+    database : 'chat_db'
+});
+
+dbc.connect(function(err) {
+    if (err) throw err;
+    console.log("Подключился к БД");
+});
+
+function query(ws, text) {
     var output;
 
-    var connection = mysql.createConnection({
-    host     : 'localhost',
-     user     : 'chat_db_user',
-    password : '9U7gVtKAybFu7y3z',
-     database : 'chat_db'
-    });
+    console.log('query: '+text);
 
-  console.log('text: '+text);
+    dbc.query( text, function(error, result){
+        console.log('query result:');
+        console.log(result);
+        console.log(JSON.stringify(result));
+        ws.send(JSON.stringify(result));
+            console.log('inner result: '+result);
+        }
+    );
 
-  connection.query(
-    text,
-    function(error, result, fields){
-	output = result;
-	console.log('inner result: '+result);
-    }
-  );
+    /* connection.end();*/
 
-connection.end();
-
-return output;
+    return output;
 }
 
-function authorize(login, pass) {
-    var user = await query('SELECT id FROM `users` WHERE login=\"'+login+'\" and password=\"'+pass+'\" LIMIT 1,1');
-    console.log("user "+user);
-    return user;
+function send_message(ws, msg) {
+    ws.send(JSON.stringify(msg));
 }
+
+function newtoken(user_id) {
+    dbc.query( 'SELECT `id` FROM `users` WHERE login=\''+dbc.escape(login)+'\' and pass=\''+dbc.escape(pass)+'\' LIMIT 0,1');
+}
+
+function authorize(ws, login, pass) {
+
+    dbc.query( 'SELECT `id` FROM `users` WHERE login='+dbc.escape(login)+' and pass='+dbc.escape(pass)+' LIMIT 0,1;' ,
+            function(error, result, fields){
+                if (error) throw error;
+                if (result.length > 0) {
+                    let user_id = result[0].id;
+                    dbc.query('UPDATE sessions set active=0 where user_id='+dbc.escape(user_id));
+                    dbc.query('INSERT INTO `sessions` (`user_id`, `active`, `date_created`, `token`) VALUES ('+dbc.escape(user_id)+', 1, NOW(), FLOOR(rand() * 10000000))');
+                    dbc.query('SELECT token FROM `sessions` WHERE active=1 and user_id='+dbc.escape(user_id),
+                        function(error2, result2) {
+                        if (error2) throw error2;
+                        if (result2.length>0) {
+                            // парсим результат
+                            let token = result2[0].token;
+                            var res = 'unknown';
+                            if (token != null) {
+                                res = 'ok';
+
+                            } else {
+                                res = 'fail';
+                                token = false
+                            }
+
+
+                            let answ = {res: res, cmd: 'auth', token: token};
+                            //debug
+                            //console.log(answ);
+                            ws.send(JSON.stringify(answ));
+                        }
+                    });
+                }
+        }
+    );
+
+    // ничего не будем возвращать, ответ будет асинхронный из колбэка обращения к БД
+}
+
+
 

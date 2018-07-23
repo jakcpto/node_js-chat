@@ -32,7 +32,7 @@ body{font-family: Roboto;}blockquote{border-color: #4ea2e3;}.display-1{font-fami
 <script src="js/bootstrap.min.js"></script>
 <script src="js/jquery.cookie.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
-<script src="js/jackpot.js"></script>
+<script defer src="js/jackpot.js"></script>
   
 </head>
 <body><amp-sidebar id="sidebar" class="cid-qYqZs7BHOc" layout="nodisplay" side="right">
@@ -43,7 +43,7 @@ body{font-family: Roboto;}blockquote{border-color: #4ea2e3;}.display-1{font-fami
             </button>
 
             <div class="sidebar mbr-white" data-app-modern-menu="true"><a class="text-primary display-7" id='login_link'>Login</a>
-              <a class="text-primary display-7" id='logout_link'>Logout</a></div>
+              <a class="text-primary display-7" id='logout_link' onclick="clearToken();">Logout</a></div>
             
             
         </div>
@@ -103,7 +103,8 @@ body{font-family: Roboto;}blockquote{border-color: #4ea2e3;}.display-1{font-fami
 
     <div class="mbr-container" id='buttons'>
         <div class="mbr-section-btn align-center">
-            <a class="btn btn-primary display-4" href="https://mobirise.com">LEARN MORE</a>
+            <input id="message" type="text" class="form-control" name="message" placeholder="Сообщение...">input
+            <!-- <a class="btn btn-primary display-4" href="https://mobirise.com">LEARN MORE</a> -->
             <a class="btn btn-black-outline display-4" href="https://mobirise.com">Отправить</a>
         </div>
     </div>
@@ -123,7 +124,7 @@ body{font-family: Roboto;}blockquote{border-color: #4ea2e3;}.display-1{font-fami
                     Введите свой логин и пароль
                 </h3>
                 <p class="mbr-section-subtitle align-right mbr-fonts-style mbr-light display-7">
-		<form id='auth_form'>
+		<form id='auth_form' onsubmit="send_auth();">
 		  <div class="input-group">
 	    		<span class="input-group-addon"><i class="glyphicon glyphicon-user"></i></span>
 	    		<input id="login" type="text" class="form-control" name="login" placeholder="Логин">
@@ -142,7 +143,7 @@ body{font-family: Roboto;}blockquote{border-color: #4ea2e3;}.display-1{font-fami
             </div>
             <div class="btn-container mbr-col-sm-12 mbr-col-md-6 mbr-col-lg-8">
                 <div class="mbr-section-btn align-center">
-                    <a class="btn btn-primary display-4" id='auth_btn' onclick="send_auth()">Авторизоваться</a>
+                    <a class="btn btn-primary display-4" id='auth_btn' onclick="send_auth();">Авторизоваться</a>
                 </div>
             </div>
         </div>
