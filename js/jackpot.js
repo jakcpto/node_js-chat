@@ -153,9 +153,8 @@ function send_auth() {
 	auth();
 }
 
-$(document).ready(function() {
-	// подключим вебсокет
-    // init_ws();
+// $(document).ready(function() {
+
     // отобразим форму и ссылки правильно
 	checkToken();
 
@@ -170,4 +169,22 @@ $(document).ready(function() {
 
     $('#logout_link').on('click', clearToken());
 
-    }); // событие: документ готов
+
+    // по нажатию Enter в поле ввода пароля
+    $('#password').onkeyup = function (e) {
+        if (e.which == 13) {
+            // отправляем серверу событие authorize
+            auth();
+        }
+    };
+// по нажатию Enter в поле ввода текста
+    $('#message').onkeyup = function (e) {
+        // если человек нажал Ctrl+Enter или Shift+Enter, то просто создаем новую строку.
+        if (e.which == 13 && !e.ctrlKey && !e.shiftKey) {
+            // отправляем серверу событие message
+            send_message();
+            $('#message').innerText = ''; // чистим поле ввода
+        }
+    };
+
+//    }); // событие: документ готов
