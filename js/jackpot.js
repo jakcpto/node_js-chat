@@ -1,12 +1,13 @@
+
+
 function setToken(cookie_value) {
-var x,y;
+var x;
 x = $.cookie("token");
 if(x == null) {
 // если нет куки, то пишем её
 $.cookie('token', cookie_value, { expires: 7000, path: '/' });
 } else {
 // если есть, то работать с ней
-y = x.split(",");
 
 }
 }
@@ -37,8 +38,8 @@ function checkToken() {
 		$( '#content2-4' ).show(); // chatroom
 		$( '#content5-5' ).show(); // buttons
 		$( '#logout_link' ).show();
-		
-		// set timer for infinite loop 
+
+		// set timer for infinite loop
 		// of getting messages to chatroom
 
 	} else { // no token
@@ -67,6 +68,10 @@ async function getUserPublicMessages(login) {
  return messages.filter(message => message.isPublic);
 }
 
+async function connect() {
+
+}
+
 //getUserPublicMessages('spiderman')
 // .then(messages => show(messages));
 
@@ -84,41 +89,60 @@ function auth() {
 	error: function(data) {
 	 console.log('Error ${data}');
 	}
-	
-	
+
+
 
  });    */
 
 	// via websocket
 	var ws = new WebSocket('ws://if1.promjet.ru:5482');
-	var start = new Date();
 
 	ws.onopen = function (data) {
 
-	msg = 'my message here';
-	var login = $( '#login' ).val();
-	var login = $( '#password' ).val();
-	ws.send(JSON.stringify(msg));
+	var cmd = 'auth';
+	var login = $('#login').val();
+	var pass = $('#password').val();
+
+        let msg = {cmd: cmd, login: login, pass: pass};
+
+        ws.send(JSON.stringify(msg));
+
+	console.log("Sent to server "+cmd+login+pass);
 	};
 
 	ws.onmessage = function (e) {
+		var answer = JSON.parse(e.data);
 
-	var end = new Date();
-	console.log('node.js - %d мс', (end.getTime()-start.getTime()) / 1000);
+		switch (answer.cmd) {
+			case 'auth':
+				var res = answer.res;
+				var token = answer.token;
+				if (res='ok') { setToken(token)
+				} else { setToken(token)}
+				break;
+			default:
+				console.log(answer);
+		}
+
+		if (e.data === 'ok') { return true }
 	};
 
 }
 
 function send_auth() {
+	console.log('send auth');
 	auth();
 }
 
 $(document).ready(function() {
     	checkToken();
 	/* $( '#auth_form' ).onsubmit(send_auth()); */
-	
-	$( '#auth_form' ).on('click', '#auth_btn', 
-		click(send_auth() )
+
+	$('#auth_form').on('submit', function() {
+            send_auth()
+        }
 	);
+
+	$('#auth_btn').on('click', send_auth());
 
     });
