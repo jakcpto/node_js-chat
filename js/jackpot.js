@@ -1,10 +1,17 @@
 //var ws; // global websocket
 
+//var reconntimer = setTimeout(function(){ ws = new WebSocket('ws://if1.promjet.ru:5482') }, 5000)
+
 // via websocket
 ws = new WebSocket('ws://if1.promjet.ru:5482');
 
 ws.onopen = function() {
-		clearTimeout(reconntimer);
+    //clearTimeout(reconntimer);
+
+    hello_server();
+    checkToken();
+    // запроси историю сообщений
+    getHistory();
 };
 
 ws.onmessage = function (e) {
@@ -12,20 +19,28 @@ ws.onmessage = function (e) {
     console.log('Получено сообщение:'+answer);
     switch (answer.cmd) {
         case 'auth':
-        	console.log(answer.token);
+            // console.log(answer.token);
             let res = answer.res;
             let token = answer.token;
-            if (res='ok') { setToken(token)
+            if (res='ok') {
+                setToken(token);
+                getHistory();
+                checkToken();
             } else {
-            	// хорошо бы сообщить что авторизация не удалась
-            	setToken(token)
+                // хорошо бы сообщить что авторизация не удалась
+                setToken(token)
             }
-            checkToken();
+
+
             break;
         case 'message':
             let user = answer.user;
-            let date = new Date(parseInt(answer.date.substr(6)));
+            let udate = new Date(answer.date);
+            // let date = answer.date;
+            // let date = new Date();
+            let date = $.format.date(udate, 'dd.MM.yy HH:mm');
             let message = answer.message;
+            // console.log(message);
             add_message(user, date, message);
             break;
         default:
@@ -34,13 +49,13 @@ ws.onmessage = function (e) {
 };
 
 ws.onclose = function (e) {
-	if (e.wasClean) {
-		console.log('Вебсокет закрыт нормально')
-	} else {
+    if (e.wasClean) {
+        console.log('Вебсокет закрыт нормально')
+    } else {
         console.log('Вебсокет закрыт нечисто. Реконнект.');
-		// reconnect
-		var reconntimer = setTimeout(function(){ ws = new WebSocket('ws://if1.promjet.ru:5482') }, 5000)
-	}
+        // reconnect
+        //reconntimer = setTimeout(function(){ ws = new WebSocket('ws://if1.promjet.ru:5482') }, 5000)
+    }
 }
 
 function init_ws(msg) {
@@ -57,9 +72,9 @@ function init_ws(msg) {
                 if (res='ok') { setToken(token)
                 } else { setToken(token)}
                 break;
-			case 'message':
+            case 'message':
                 let user = answer.user;
-                let date = new Date(parseInt(answer.date.substr(6)));
+                let date = answer.date;
                 let message = answer.message;
                 add_message(user, date, message);
                 break;
@@ -71,8 +86,8 @@ function init_ws(msg) {
 }
 
 function setToken(token_val) {
-	console.log("Токен = "+token_val);
-	//храним токен в хранилище
+    // console.log("Токен = "+token_val);
+    //храним токен в хранилище
 
     localStorage.setItem("token", token_val);
     console.log("Текущий токен = "+localStorage.getItem("token"));
@@ -80,17 +95,17 @@ function setToken(token_val) {
 
 
 function getToken() {
-var x;
-console.log('Читаем токен '+localStorage.getItem("token"));
-x = localStorage.getItem("token");
-if ((x == null) || (x == 'false')) {
-	// если нет токена, то вернем false
-	return false;
-} else {
+    var x;
+    // console.log('Читаем токен '+localStorage.getItem("token"));
+    x = localStorage.getItem("token");
+    if ((x == null) || (x == 'false')) {
+        // если нет токена, то вернем false
+        return false;
+    } else {
 // если есть, то вернем токен
-return x;
+        return x;
 
-}
+    }
 }
 
 function clearToken() {
@@ -98,16 +113,39 @@ function clearToken() {
     checkToken();
 }
 
+function getHistory(){
+    let ltoken = getToken();
+    let req = {cmd: 'history', token: ltoken};
+    send_ws_message(ws, req);
+}
+
 function add_message(user, date, message) {
-	let elem= document.createElement('div');
-	let sdate =toString(date);
-	elem.innerText = "<strong>"+user+"</strong><i>"+sdate+"</i><code>"+message+"</code>";
-	$('chatroom').appendChild(elem);
+    let elem= document.createElement('div');
+    let huser= document.createElement('strong');
+    let hdate= document.createElement('i');
+    let hmess= document.createElement('code');
+    let sdate =toString(date);
+    hdate.innerText = date;
+    huser.innerText = " | "+ user +" > ";
+    hmess.innerText = message;
+
+    elem.appendChild(hdate);
+    elem.appendChild(huser);
+    elem.appendChild(hmess);
+    // elem.innerText = "<strong>"+user+"</strong><i>"+sdate+"</i><code>"+message+"</code>";
+    //$('chatroom').append("<strong>"+user+"</strong><i>"+sdate+"</i><code>"+message+"</code>"); //elem.innerText;
+
+    var messageElem = document.createElement('div');
+    messageElem.appendChild(document.createTextNode(message));
+    document.getElementById('chatroom').appendChild(elem);
+
+    // console.log('added '+message);
 }
 
 function checkToken() {
-	var token = getToken();
-	console.log('ChekToken '+token);
+    var token = getToken();
+    console.log('ChekToken '+token);
+
     if ((token == 'false') || (token == false)) { // no token
         // show
         $('#login_link').show();
@@ -135,56 +173,79 @@ function checkToken() {
     }
 }
 
+function hello_server() {
+
+    var cmd = 'hello';
+    var token = getToken();
+
+    if ((token == 'false') || (token == false)) { // no token
+        console.log("No token found: " + cmd + token);
+    } else {
+        let msg = {cmd: cmd, token: token};
+
+        send_ws_message(ws, msg);
+
+        // console.log("Sent to server hello " + cmd + token);
+    }
+}
+
 function auth() {
 
-	var cmd = 'auth';
-	var login = $('#login').val();
-	var pass = $('#password').val();
+    var cmd = 'auth';
+    var login = $('#login').val();
+    var pass = $('#password').val();
 
-        let msg = {cmd: cmd, login: login, pass: pass};
-        ws.send(JSON.stringify(msg));
+    let msg = {cmd: cmd, login: login, pass: pass};
 
-	console.log("Sent to server "+cmd+login+pass);
+    send_ws_message(ws, msg);
+
+    // console.log("Sent to server auth "+cmd+login+pass);
 
 }
 
-function send_auth() {
-	console.log('send auth');
-	auth();
+function out_message(){
+    var msg = $('#message').val();
+    let token = getToken();
+    let cmd = 'msg';
+    let snd = {cmd: cmd, token: token, msg: msg};
+
+    send_ws_message(ws, snd);
+
+    $('#message').val(''); // чистим поле ввода
+
+    console.log("Sent to server msg "+snd);
+}
+
+function send_auth(e) {
+    if (e.which == 13) {
+        // отправляем серверу событие authorize
+        auth();
+    }
+}
+
+function send_message (event) {
+    // если человек нажал Ctrl+Enter или Shift+Enter, то просто создаем новую строку.
+    if (event.which == 13 && !event.ctrlKey && !event.shiftKey) {
+        // отправляем серверу событие message
+        out_message();
+    }
+}
+
+function send_ws_message(ws, msg) {
+    try {
+        ws.send(JSON.stringify(msg));
+    }
+    catch (error) {
+        console.log('Отправка не удалась. Реконнект');
+        //reconntimer = setTimeout(function(){ ws = new WebSocket('ws://if1.promjet.ru:5482') }, 5000)
+    }
 }
 
 // $(document).ready(function() {
 
     // отобразим форму и ссылки правильно
-	checkToken();
-
-	// повесим функции на кнопки и линки
-	$('#auth_form').on('submit', function() {
-            send_auth()
-        }
-	);
-
-	$('#auth_btn').on('click', auth());
-	console.log("Document loaded function executed");
-
-    $('#logout_link').on('click', clearToken());
+    checkToken();
 
 
-    // по нажатию Enter в поле ввода пароля
-    $('#password').onkeyup = function (e) {
-        if (e.which == 13) {
-            // отправляем серверу событие authorize
-            auth();
-        }
-    };
-// по нажатию Enter в поле ввода текста
-    $('#message').onkeyup = function (e) {
-        // если человек нажал Ctrl+Enter или Shift+Enter, то просто создаем новую строку.
-        if (e.which == 13 && !e.ctrlKey && !e.shiftKey) {
-            // отправляем серверу событие message
-            send_message();
-            $('#message').innerText = ''; // чистим поле ввода
-        }
-    };
 
 //    }); // событие: документ готов

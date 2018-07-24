@@ -1,17 +1,20 @@
-var http        = require('http');
-var request     = require('request');
 var mysql 	    = require('mysql');
 var websocket   = require('ws');
 
-// WebSocket-сервер на порту 8081
+// WebSocket-сервер на порту 5482
 var webSocketServer = new websocket.Server({
     host: '192.168.25.57',
     port: 5482
 });
 
+// здесь будем хранить активные соединения
+var connections = {};
+
 webSocketServer.on('connection', function(ws) {
 
     console.log("Новое соединение");
+    // токен для поиска соединения в списке активных
+    var token;
 
 
     ws.on('message', function(message) {
@@ -19,34 +22,34 @@ webSocketServer.on('connection', function(ws) {
         var msg = JSON.parse(message);
 
         switch (msg.cmd) {
-            case 'auth':
-                let token = authorize(ws, msg.login, msg.pass);
-                if (token != null) {
-                    var res = 'ok';
-
-                } else { var res = 'fail';
-                    token = false }
+            case 'auth': // авторизация клиента
+                token = authorize(ws, msg.login, msg.pass);
+                let res = 'any'; // не пригодилась переменная
                 var answ = {res: res, cmd: msg.cmd, token: token};
                 send_message(ws, answ);
                 break;
-            case 'msg':
-                // проверить токен
-                // принять сообщение в список
-                // толкнуть всем сокетам новое сообщение
-                if (check_token(msg.token)) {
-
-                }
+            case 'msg': // прием сообщений
+                // обработаем новое сообщение в чат
+                recv_message(msg);
                 break;
-            default:
+            case 'hello': // связываем авторизованного клиента и вебсокет
+                token = msg.token;
+                hello(ws, token);
+                break;
+            case 'history': // список старых сообщений
+                token = msg.token;
+                get_history_messages(ws, token);
+                break;
+            default: // без команды не должно быть
                 var answ = {res: 'unknown', cmd: msg.cmd};
                 send_message(ws, answ);
         }
-
-
     });
 
     ws.on('close', function() {
-        console.log('Вебсокет закрыт');
+        // удалить соединение по токену
+        bye(token);
+        // console.log('Вебсокет закрыт');
         // от БД не отключаемся
         // dbc.end;
     });
@@ -63,34 +66,35 @@ var dbc = mysql.createConnection({
 
 dbc.connect(function(err) {
     if (err) throw err;
-    console.log("Подключился к БД");
+    // было для отладки
+    // console.log("Подключился к БД");
 });
 
-function query(ws, text) {
-    var output;
-
-    console.log('query: '+text);
-
-    dbc.query( text, function(error, result){
-        console.log('query result:');
-        console.log(result);
-        console.log(JSON.stringify(result));
-        ws.send(JSON.stringify(result));
-            console.log('inner result: '+result);
-        }
-    );
-
-    /* connection.end();*/
-
-    return output;
-}
-
 function send_message(ws, msg) {
-    ws.send(JSON.stringify(msg));
+    try {
+        // попробуем отправить
+        ws.send(JSON.stringify(msg));
+    }
+    catch (error) {
+        // а клиент уже отвалился
+        // console.log('Connection closed');
+        // удалим из активных, токен не знаю.
+        for (var ltoken in connections) {
+            if (connections[ltoken] == ws) {
+                delete connections[ltoken];
+            }
+        }
+    }
 }
 
-function newtoken(user_id) {
-    dbc.query( 'SELECT `id` FROM `users` WHERE login=\''+dbc.escape(login)+'\' and pass=\''+dbc.escape(pass)+'\' LIMIT 0,1');
+function hello(ws, token){
+    // запомним сокет авторизованного клиента
+    connections[token] = ws;
+}
+
+function bye(token) {
+    // кто-то вежливо отключился
+    delete connections[token];
 }
 
 function authorize(ws, login, pass) {
@@ -117,19 +121,83 @@ function authorize(ws, login, pass) {
                                 token = false
                             }
 
+                            // добавим в список активных и авторизованных коннекшенов
+                            hello(ws, token);
 
                             let answ = {res: res, cmd: 'auth', token: token};
                             //debug
-                            //console.log(answ);
-                            ws.send(JSON.stringify(answ));
+                            // console.log(answ);
+                            // отправка с обработкой отвалившихся сокетов
+                            send_message(ws, answ);
                         }
                     });
                 }
         }
     );
 
-    // ничего не будем возвращать, ответ будет асинхронный из колбэка обращения к БД
+    // ничего не будем возвращать, ответ будет из колбэка обращения к БД
 }
 
+function recv_message(msg) {
+    // принять перменные
+    let token = msg.token;
+    let message_text = msg.msg;
+    let rtime = new Date();
 
+    // проверить токен
+    dbc.query( 'SELECT `user_id`, `session_id` FROM `sessions` WHERE active=1 and `token`='+dbc.escape(token), function(err, res1) {
+        if (err) throw err;
+        if (res1.length > 0) {
+            let user_id = res1[0].user_id;
+            let session_id = res1[0].session_id;
+            // принять сообщение в список сообщений
+            dbc.query('INSERT INTO `messages`(`sesson_id`, `user_id`, `date_time`, `message_text`) VALUES ('+dbc.escape(session_id)+','+dbc.escape(user_id)+',NOW(),'+dbc.escape(message_text)+');');
+            // разослать всем клиентам новое сообщение
+            // для этого надо унать как зовут этого юзера
+            dbc.query('SELECT `username` FROM `users` WHERE `id`=?', user_id, function (err, res2) {
+                if (res2.length > 0) {
+                    let username = res2[0].username;
+                    // толкнуть всем сокетам новое сообщение
+                    push_new_chat_message(username, rtime, message_text);
+                }
+                }
+            )
 
+        }
+    } );
+}
+
+function get_history_messages(ws, token) {
+    // принять перменные
+
+    // проверить токен
+    dbc.query( 'SELECT `user_id`, `session_id` FROM `sessions` WHERE active=1 and `token`='+dbc.escape(token), function(err, res1) {
+        if (err) throw err;
+        if (res1.length > 0) {
+            let user_id = res1[0].user_id;
+            let session_id = res1[0].session_id;
+            // запросить сообщения из базы
+            dbc.query('select `message_text`, `messages`.`date_time`, `users`.`username` from `messages` left JOIN `users` on `messages`.`user_id` = `users`.`id` order by `messages`.`date_time`;', function (err, res2) {
+                    if (err) throw err;
+                    if (res2.length > 0) {
+                        let username = res2[0].username;
+                        for (i=0, len =  res2.length; i<len; i++) {
+                            let answ = {cmd: 'message',  user: res2[i].username, date: res2[i].date_time, message: res2[i].message_text};
+                            send_message(ws, answ);
+                        }
+                    }
+                }
+            )
+
+        }
+    } );
+}
+
+function push_new_chat_message(username, rtime, message_text) {
+    let answ = {cmd: 'message', user: username, date: rtime, message: message_text};
+    // всем активным авторизованным соединениям
+    for (var ltoken in connections) {
+        send_message(connections[ltoken], answ);
+        //console.log('Send message to '+ltoken+' from '+username);
+    }
+}
