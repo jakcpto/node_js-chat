@@ -1,24 +1,29 @@
 //var ws; // global websocket
 
 //var reconntimer = setTimeout(function(){ ws = new WebSocket('ws://if1.promjet.ru:5482') }, 5000)
+var onlinetimer = setTimeout(getOnlineUsers, 5000);
 
 // via websocket
 ws = new WebSocket('ws://if1.promjet.ru:5482');
 
 ws.onopen = function() {
     //clearTimeout(reconntimer);
+    //clearTimeout(onlinetimer);
 
     hello_server();
     checkToken();
     // запроси историю сообщений
     getHistory();
+    // запросим кто онлайн
+    getOnlineUsers();
+    onlinetimer = setTimeout(getOnlineUsers, 5000);
 };
 
 ws.onmessage = function (e) {
     var answer = JSON.parse(e.data);
-    console.log('Получено сообщение:'+answer);
+    console.log('Получено сообщение с типом '+answer.cmd);
     switch (answer.cmd) {
-        case 'auth':
+        case 'auth': // результат авторизации
             // console.log(answer.token);
             let res = answer.res;
             let token = answer.token;
@@ -26,12 +31,11 @@ ws.onmessage = function (e) {
                 setToken(token);
                 getHistory();
                 checkToken();
+                getOnlineUsers();
             } else {
                 // хорошо бы сообщить что авторизация не удалась
                 setToken(token)
             }
-
-
             break;
         case 'message':
             let user = answer.user;
@@ -43,12 +47,19 @@ ws.onmessage = function (e) {
             // console.log(message);
             add_message(user, date, message);
             break;
+        case 'whoisonline':
+            let users = answer.users;
+            showwhoisonline(users);
+            break;
         default:
-            console.log('unknown'+answer);
+            // console.log('unknown'+answer);
     }
 };
 
 ws.onclose = function (e) {
+
+    clearTimeout(onlinetimer);
+
     if (e.wasClean) {
         console.log('Вебсокет закрыт нормально')
     } else {
@@ -90,7 +101,7 @@ function setToken(token_val) {
     //храним токен в хранилище
 
     localStorage.setItem("token", token_val);
-    console.log("Текущий токен = "+localStorage.getItem("token"));
+    //console.log("Текущий токен = "+localStorage.getItem("token"));
 }
 
 
@@ -109,6 +120,9 @@ function getToken() {
 }
 
 function clearToken() {
+    let ltoken = getToken();
+    let req = {cmd: 'logout', token: ltoken};
+    send_ws_message(ws, req);
     localStorage.removeItem("token");
     checkToken();
 }
@@ -116,6 +130,12 @@ function clearToken() {
 function getHistory(){
     let ltoken = getToken();
     let req = {cmd: 'history', token: ltoken};
+    send_ws_message(ws, req);
+}
+
+function getOnlineUsers(){
+    let ltoken = getToken();
+    let req = {cmd: 'whoisonline', token: ltoken};
     send_ws_message(ws, req);
 }
 
@@ -132,19 +152,27 @@ function add_message(user, date, message) {
     elem.appendChild(hdate);
     elem.appendChild(huser);
     elem.appendChild(hmess);
-    // elem.innerText = "<strong>"+user+"</strong><i>"+sdate+"</i><code>"+message+"</code>";
-    //$('chatroom').append("<strong>"+user+"</strong><i>"+sdate+"</i><code>"+message+"</code>"); //elem.innerText;
 
-    var messageElem = document.createElement('div');
-    messageElem.appendChild(document.createTextNode(message));
     document.getElementById('chatroom').appendChild(elem);
 
     // console.log('added '+message);
 }
 
+function showwhoisonline(users) {
+    $('#whoisonline').val('');
+    if (users.length > 0 ) {
+        users.forEach(function(item, i, arr) {
+            let elem= document.createElement('div');
+            elem.innerText = item.username;
+            document.getElementById('whoisonline').appendChild(elem);
+        });
+    }
+    // console.log('added '+message);
+}
+
 function checkToken() {
     var token = getToken();
-    console.log('ChekToken '+token);
+    //console.log('ChekToken '+token);
 
     if ((token == 'false') || (token == false)) { // no token
         // show
@@ -155,10 +183,11 @@ function checkToken() {
         $('#content2-4').hide(); // chatroom
         $('#content5-5').hide(); // buttons
         $('#logout_link').hide();
-        console.log('No token');
+        $('#whoisonlinecontainer').hide();
+        //console.log('No token');
     } else {
         // hide
-        console.log('Token: ' + token);
+        //console.log('Token: ' + token);
         $('#login_link').hide();
         $('#info2-6').hide(); // auth
         $('#content4-3').hide(); // intro text
@@ -166,7 +195,7 @@ function checkToken() {
         $('#content2-4').show(); // chatroom
         $('#content5-5').show(); // buttons
         $('#logout_link').show();
-
+        $('#whoisonlinecontainer').show();
         // set timer for infinite loop
         // of getting messages to chatroom
 
@@ -179,7 +208,7 @@ function hello_server() {
     var token = getToken();
 
     if ((token == 'false') || (token == false)) { // no token
-        console.log("No token found: " + cmd + token);
+        //console.log("No token found: " + cmd + token);
     } else {
         let msg = {cmd: cmd, token: token};
 
@@ -213,7 +242,7 @@ function out_message(){
 
     $('#message').val(''); // чистим поле ввода
 
-    console.log("Sent to server msg "+snd);
+    //console.log("Sent to server msg "+snd);
 }
 
 function send_auth(e) {

@@ -24,7 +24,8 @@ webSocketServer.on('connection', function(ws) {
         switch (msg.cmd) {
             case 'auth': // авторизация клиента
                 token = authorize(ws, msg.login, msg.pass);
-                let res = 'any'; // не пригодилась переменная
+                let res = 'ok'; // не пригодилась переменная
+                                // проверки всё-равно в каждой вызываемой функции
                 var answ = {res: res, cmd: msg.cmd, token: token};
                 send_message(ws, answ);
                 break;
@@ -39,6 +40,16 @@ webSocketServer.on('connection', function(ws) {
             case 'history': // список старых сообщений
                 token = msg.token;
                 get_history_messages(ws, token);
+                break;
+            case 'whoisonline': // список пользователей онлайн
+                token = msg.token;
+                get_online_users(ws, token);
+                break;
+            case 'logout': // дизлогон
+                token = msg.token;
+                bye(token);
+                // пока не close
+                // ws.close();
                 break;
             default: // без команды не должно быть
                 var answ = {res: 'unknown', cmd: msg.cmd};
@@ -95,6 +106,7 @@ function hello(ws, token){
 function bye(token) {
     // кто-то вежливо отключился
     delete connections[token];
+    dbc.query('UPDATE sessions set active=0 where token='+dbc.escape(token));
 }
 
 function authorize(ws, login, pass) {
@@ -180,11 +192,56 @@ function get_history_messages(ws, token) {
             dbc.query('select `message_text`, `messages`.`date_time`, `users`.`username` from `messages` left JOIN `users` on `messages`.`user_id` = `users`.`id` order by `messages`.`date_time`;', function (err, res2) {
                     if (err) throw err;
                     if (res2.length > 0) {
-                        let username = res2[0].username;
+                        // по одному отправляем, в хронолоическом порядке как в сортироке запроса
                         for (i=0, len =  res2.length; i<len; i++) {
                             let answ = {cmd: 'message',  user: res2[i].username, date: res2[i].date_time, message: res2[i].message_text};
                             send_message(ws, answ);
                         }
+                    }
+                }
+            )
+
+        }
+    } );
+}
+
+function get_online_users(ws, token) {
+    // принять перменные
+
+    // проверить токен
+    dbc.query( 'SELECT `user_id`, `session_id` FROM `sessions` WHERE active=1 and `token`='+dbc.escape(token), function(err, res1) {
+        if (err) throw err;
+        if (res1.length > 0) {
+            // юзер авторизован, отвечаем
+            let user_id = res1[0].user_id;
+            let session_id = res1[0].session_id;
+
+            // составим список тоекнов из списка подключений в строку через запятую, потом в запрос вставим
+            var keys = '';
+            // var maxkey = connections.length-1; // минус это самое подключение
+            // а пофиг, пусть запросившего тоже показывает
+
+            for (key in connections) {
+                keys = keys + key + ',';
+
+                // если не надо запросившего показывать
+                // if (connections[key] != ws)
+                // но надо, хотя бы для отлладки
+            }
+
+            // уберем последнюю запятую
+            keys = keys.substring(0,keys.length-1);
+
+            console.log('keys '+keys);
+
+            // запросить сообщения из базы
+            console.log('SELECT `user_id`, `users`.`username` FROM `sessions` left join `users` on `sessions`.`user_id`=`users`.`id` WHERE `sessions`.`token` in ('+keys+');');
+            dbc.query('SELECT `user_id`, `users`.`username` FROM `sessions` left join `users` on `sessions`.`user_id`=`users`.`id` WHERE `sessions`.`token` in ('+keys+');', function (err, res2) {
+                    if (err) throw err;
+                    if (res2.length > 0) {
+                        let answ = {cmd: 'whoisonline',  users: res2};
+                        console.log('online: '+answ);
+                        send_message(ws, answ);
                     }
                 }
             )
